@@ -1,8 +1,9 @@
 {
     "openai": {
-        "api_version": "2025-04-01-preview",
+        "api_version": "2025-01-01-preview",
         "multimodal_model": "gpt-4o",
-        "text_model": "gpt-4.1"
+        "text_model": "gpt-4.1",
+        "embedding_model": "text-embedding-3-small"
     },
     "document_intelligence": {
         "layout_model": "prebuilt-layout"

@@ -8,58 +8,137 @@
 </head>
 <body>
     <div class="container">
-        <h1>통합 문서 검색 시스템</h1>
-
-        <div class="search-form">
-            <div class="form-group">
-                <label for="query">질문:</label>
-                <input type="text" id="query" placeholder="질문을 입력하세요" autofocus>
+        <header>
+            <h1>통합 문서 검색 시스템</h1>
+            <div class="tab-menu">
+                <button class="tab-btn active" data-tab="search">검색</button>
+                <button class="tab-btn" data-tab="documents">문서 관리</button>
             </div>
+        </header>
 
-            <div class="form-group">
-                <label for="max-documents">조회할 문서 수:</label>
-                <input type="number" id="max-documents" min="1" max="10" value="3">
-            </div>
+        <main>
+            <!-- 검색 탭 -->
+            <section class="tab-content active" id="search-tab">
+                <div class="search-form">
+                    <div class="form-group">
+                        <label for="query">질문:</label>
+                        <input type="text" id="query" placeholder="질문을 입력하세요">
+                    </div>
 
-            <button id="search-btn">답변 생성</button>
-        </div>
+                    <div class="form-group">
+                        <label for="max-documents">조회할 문서 수:</label>
+                        <input type="number" id="max-documents" min="1" max="10" value="3">
+                    </div>
 
-        <!-- 로딩 표시 -->
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>답변을 생성하는 중입니다...</p>
-        </div>
+                    <div class="form-group checkbox">
+                        <input type="checkbox" id="include-images" checked>
+                        <label for="include-images">이미지 포함</label>
+                    </div>
 
-        <!-- 오류 메시지 -->
-        <div class="error" id="error-message"></div>
-
-        <!-- 답변 섹션 -->
-        <div class="answer-section" id="answer-section">
-            <h2>통합 답변</h2>
-
-            <!-- 답변 내용 -->
-            <div class="answer-container">
-                <div class="answer-header">
-                    <h3>질문에 대한 답변</h3>
+                    <button id="search-btn">답변 생성</button>
                 </div>
-                <div class="answer-content" id="main-answer"></div>
-            </div>
 
-            <!-- 참조 문서 목록 -->
-            <div class="source-documents">
-                <h3>참조 문서</h3>
-                <div id="source-documents"></div>
-            </div>
-        </div>
+                <!-- 로딩 표시 -->
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>답변을 생성하는 중입니다...</p>
+                </div>
+
+                <!-- 오류 메시지 -->
+                <div class="error" id="error-message"></div>
+
+                <!-- 답변 섹션 -->
+                <div class="answer-section" id="answer-section">
+                    <h2>통합 답변</h2>
+
+                    <!-- 답변 내용 -->
+                    <div class="answer-container">
+                        <div class="answer-header">
+                            <h3>질문에 대한 답변</h3>
+                        </div>
+                        <div class="answer-content" id="main-answer"></div>
+                    </div>
+
+                    <!-- 참조 문서 목록 -->
+                    <div class="source-documents">
+                        <h3>참조 문서</h3>
+                        <div id="source-documents"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 문서 관리 탭 -->
+            <section class="tab-content" id="documents-tab">
+                <div class="document-upload">
+                    <h2>문서 업로드</h2>
+                    <form id="upload-form" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label for="document-file">파일 선택 (PDF, PPTX):</label>
+                            <input type="file" id="document-file" name="file" accept=".pdf,.pptx">
+                        </div>
+                        <button type="submit" id="upload-btn">업로드</button>
+                    </form>
+                    <div class="upload-progress" id="upload-progress">
+                        <div class="progress-bar">
+                            <div class="progress-value" id="progress-value"></div>
+                        </div>
+                        <p id="progress-status">준비 중...</p>
+                    </div>
+                </div>
+
+                <div class="document-list">
+                    <h2>문서 목록</h2>
+                    <button id="refresh-btn" class="action-btn">새로고침</button>
+                    <button id="consolidate-btn" class="action-btn">문서 통합</button>
+
+                    <div class="document-grid" id="document-grid">
+                        <!-- 문서 카드가 여기에 추가됩니다 -->
+                        <div class="loading-placeholder">문서 로딩 중...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
     <!-- 이미지 모달 -->
     <div id="imageModal" class="modal">
         <span class="close">&times;</span>
         <img class="modal-content" id="modalImage">
+        <div id="modalCaption"></div>
+    </div>
+
+    <!-- 문서 상세 모달 -->
+    <div id="documentModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="documentTitle">문서 상세</h3>
+                <span class="close document-close">&times;</span>
+            </div>
+            <div class="modal-body" id="documentContent">
+                <!-- 문서 상세 정보가 여기에 표시됩니다 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 확인 모달 -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-dialog confirm-dialog">
+            <div class="modal-header">
+                <h3 id="confirmTitle">확인</h3>
+                <span class="close confirm-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">작업을 진행하시겠습니까?</p>
+                <div class="confirm-buttons">
+                    <button id="confirmYes" class="btn-primary">예</button>
+                    <button id="confirmNo" class="btn-secondary">아니오</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/search.js"></script>
     <script src="/static/js/ui.js"></script>
+    <script src="/static/js/documents.js"></script>
 </body>
 </html>

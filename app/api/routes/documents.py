@@ -1,18 +1,45 @@
 import os
 import tempfile
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+import logging
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, Query
+from typing import List, Optional
+from pydantic import BaseModel, Field
 
-router = APIRouter(
-    prefix="/documents",
-    tags=["documents"],
-    responses={404: {"description": "Not found"}},
-)
+# 로깅 설정
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
 
 
-@router.post("/upload")
+# 모델 정의
+class DocumentUploadResponse(BaseModel):
+    success: bool = Field(..., description="성공 여부")
+    message: str = Field(..., description="처리 메시지")
+    document_name: str = Field(..., description="문서명")
+    pages_processed: int = Field(0, description="처리된 페이지 수")
+
+
+class DocumentInfo(BaseModel):
+    folder_name: str = Field(..., description="문서 폴더명")
+    document_type: str = Field(..., description="문서 유형")
+    pages_count: int = Field(0, description="페이지 수")
+    created_at: Optional[str] = Field(None, description="생성 시간")
+    document_summary: Optional[str] = Field(None, description="문서 요약")
+
+
+class DocumentListResponse(BaseModel):
+    documents: List[DocumentInfo] = Field(..., description="문서 목록")
+    total_count: int = Field(..., description="총 문서 수")
+
+
+@router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(request: Request, file: UploadFile = File(...)):
     """
     문서 업로드 및 처리 API
+
+    - PDF 또는 PPTX 파일을 업로드하여 처리
+    - 파일은 GPT-4o를 통해 분석되어 텍스트와 이미지로 분리됨
+    - 처리된 문서는 검색 가능한 형태로 데이터베이스에 저장됨
     """
     file_extension = os.path.splitext(file.filename)[1].lower()
     if file_extension not in ['.pdf', '.pptx']:
@@ -26,59 +53,179 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
         document_processor = request.state.document_processor
         result = document_processor.process_document(temp_file_path)
 
-        return {
-            "success": True,
-            "message": f"{result['pages_processed']}개 페이지가 처리되었습니다.",
-            "document_name": result["document_name"]
-        }
+        if result['status'] == 'error':
+            raise HTTPException(
+                status_code=500,
+                detail=result.get('error', '문서 처리 중 오류가 발생했습니다.')
+            )
+
+        return DocumentUploadResponse(
+            success=True,
+            message=f"{result['pages_processed']}개 페이지가 처리되었습니다.",
+            document_name=result['document_name'],
+            pages_processed=result['pages_processed']
+        )
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"문서 처리 중 오류 발생: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"문서 처리 중 오류 발생: {str(e)}")
     finally:
-        os.unlink(temp_file_path)
+        try:
+            os.unlink(temp_file_path)
+        except:
+            pass
 
 
-@router.get("/list")
-async def list_documents(request: Request):
+@router.get("/list", response_model=DocumentListResponse)
+async def list_documents(
+        request: Request,
+        limit: int = Query(50, description="최대 결과 수"),
+        offset: int = Query(0, description="결과 오프셋"),
+        include_consolidated: bool = Query(True, description="통합 문서 포함 여부"),
+        include_pages: bool = Query(False, description="개별 페이지 문서 포함 여부")
+):
     """
-    처리된 문서 목록 조회 API
+    문서 목록 조회 API
     """
     try:
         search_engine = request.state.search_engine
 
-        filter_query = {"is_consolidated": True}
-        consolidated_docs = search_engine.find_document(filter_query)
+        query = {}
 
-        filter_query = {"is_consolidated": {"$ne": True}}
-        regular_docs = search_engine.find_document(filter_query)
+        if include_consolidated and not include_pages:
+            query["is_consolidated"] = True
+        elif include_pages and not include_consolidated:
+            query["is_consolidated"] = {"$ne": True}
 
-        document_groups = {}
+        all_docs = search_engine.find_document(query, limit=limit)
 
-        for doc in consolidated_docs:
-            folder_name = doc.get("folder_name", "")
-            if folder_name:
-                document_groups[folder_name] = {
-                    "folder_name": folder_name,
-                    "type": "consolidated",
-                    "pages": len(doc.get("pages", [])),
-                    "created_at": doc.get("created_at", "")
-                }
+        documents = []
+        seen_folders = set()
 
-        for doc in regular_docs:
-            folder_name = doc.get("folder_name", "")
-            if folder_name and folder_name not in document_groups:
-                document_groups[folder_name] = {
-                    "folder_name": folder_name,
-                    "type": "regular",
-                    "pages": 1,
-                    "created_at": doc.get("created_at", "")
-                }
-            elif folder_name in document_groups and document_groups[folder_name]["type"] == "regular":
-                document_groups[folder_name]["pages"] += 1
+        for doc in all_docs:
+            folder_name = doc.get('folder_name', '')
 
-        documents_list = list(document_groups.values())
-        documents_list.sort(key=lambda x: x.get("folder_name", ""))
+            if folder_name in seen_folders:
+                continue
 
-        return {"documents": documents_list, "total": len(documents_list)}
+            seen_folders.add(folder_name)
+
+            if doc.get('is_consolidated', False):
+                document_type = "consolidated"
+                pages_count = len(doc.get('pages', []))
+            else:
+                document_type = "single_page"
+                pages_count = 1
+
+            created_at = None
+            if 'created_at' in doc:
+                try:
+                    created_at = doc['created_at'].isoformat()
+                except:
+                    created_at = str(doc['created_at'])
+
+            document_info = DocumentInfo(
+                folder_name=folder_name,
+                document_type=document_type,
+                pages_count=pages_count,
+                created_at=created_at,
+                document_summary=doc.get('document_summary', '')
+            )
+
+            documents.append(document_info)
+
+        return DocumentListResponse(
+            documents=documents,
+            total_count=len(documents)
+        )
 
     except Exception as e:
+        logger.error(f"문서 목록 조회 중 오류 발생: {e}")
         raise HTTPException(status_code=500, detail=f"문서 목록 조회 중 오류 발생: {str(e)}")
+
+
+@router.post("/consolidate")
+async def consolidate_documents(request: Request):
+    """
+    문서 통합 API
+
+    - 페이지 단위 문서를 문서 단위로 통합
+    - 통합 문서에는 모든 페이지 정보와 이미지가 포함됨
+    - 문서 전체에 대한 요약이 자동으로 생성됨
+    """
+    try:
+        search_engine = request.state.search_engine
+
+        result = search_engine.migrate_to_document_structure_in_place()
+
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        return {
+            "success": True,
+            "message": f"{result['processed_documents']}개 문서가 통합되었습니다.",
+            "details": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"문서 통합 중 오류 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"문서 통합 중 오류 발생: {str(e)}")
+
+
+@router.delete("/document/{document_id}")
+async def delete_document(request: Request, document_id: str):
+    """
+    문서 삭제 API
+    """
+    try:
+        search_engine = request.state.search_engine
+
+        if not search_engine.collection:
+            raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
+
+        result = search_engine.collection.delete_one({"_id": document_id})
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없습니다: {document_id}")
+
+        return {
+            "success": True,
+            "message": f"문서 ID: {document_id}가 삭제되었습니다."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"문서 삭제 중 오류 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"문서 삭제 중 오류 발생: {str(e)}")
+
+
+@router.delete("/folder/{folder_name}")
+async def delete_folder(request: Request, folder_name: str):
+    """
+    폴더 삭제 API
+    """
+    try:
+        search_engine = request.state.search_engine
+
+        if not search_engine.collection:
+            raise HTTPException(status_code=500, detail="데이터베이스 연결이 설정되지 않았습니다.")
+
+        result = search_engine.collection.delete_many({"folder_name": folder_name})
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail=f"폴더를 찾을 수 없습니다: {folder_name}")
+
+        return {
+            "success": True,
+            "message": f"폴더: {folder_name}의 {result.deleted_count}개 문서가 삭제되었습니다."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"폴더 삭제 중 오류 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"폴더 삭제 중 오류 발생: {str(e)}")

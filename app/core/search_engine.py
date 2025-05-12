@@ -4,6 +4,8 @@ import numpy as np
 from typing import List, Dict, Any, Optional, Union, Tuple
 from datetime import datetime
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +32,8 @@ class DocumentSearchEngine:
 
         self.database = self.cosmos_client[self.database_id] if self.cosmos_client else None
         self.collection = self.database[self.collection_name] if self.database else None
+
+        logger.info(f"검색 엔진 초기화 완료: Database={self.database_id}, Collection={self.collection_name}")
 
     def _init_cosmos_client(self, cosmos_config: Dict[str, str]) -> Any:
         """
@@ -239,68 +243,30 @@ class DocumentSearchEngine:
 
             if "description" in result:
                 processed["text"] = result["description"]
+            elif "text_content" in result:
+                processed["text"] = result["text_content"]
             elif "full_text" in result:
                 processed["text"] = result["full_text"]
             else:
                 processed["text"] = ""
 
-            processed["content_analysis"] = self._extract_content_analysis(result)
+            if "page_summary" in result:
+                processed["summary"] = result["page_summary"]
 
-            processed["images"] = self._extract_images(result)
+            processed["images"] = []
+
+            if "images" in result and isinstance(result["images"], list):
+                processed["images"] = result["images"]
+
+            elif "all_images" in result and isinstance(result["all_images"], list):
+                processed["images"] = [{"image": img, "description": "이미지"} for img in result["all_images"]]
+
+            if "elements" in result:
+                processed["elements"] = result["elements"]
 
             processed_results.append(processed)
 
         return processed_results
-
-    def _extract_content_analysis(self, result: Dict[str, Any]) -> Dict[str, str]:
-        """
-        문서 분석 정보 추출
-
-        Args:
-            result: 검색 결과 문서
-
-        Returns:
-            분석 정보
-        """
-        analysis = {}
-
-        if "content_analysis" in result:
-            try:
-                if isinstance(result["content_analysis"], str):
-                    analysis = json.loads(result["content_analysis"])
-                elif isinstance(result["content_analysis"], dict):
-                    analysis = result["content_analysis"]
-            except json.JSONDecodeError:
-                logger.warning(f"콘텐츠 분석 JSON 파싱 실패: {result['content_analysis'][:50]}...")
-            except Exception as e:
-                logger.warning(f"콘텐츠 분석 추출 오류: {e}")
-
-        if "key_information" in result:
-            analysis["key_information"] = result["key_information"]
-        elif "key_information" not in analysis:
-            analysis["key_information"] = ""
-
-        return analysis
-
-    def _extract_images(self, result: Dict[str, Any]) -> List[str]:
-        """
-        문서 이미지 추출
-
-        Args:
-            result: 검색 결과 문서
-
-        Returns:
-            이미지 URL 목록
-        """
-        images = []
-
-        if "all_images" in result and isinstance(result["all_images"], list):
-            images.extend(result["all_images"])
-
-        elif "images" in result and isinstance(result["images"], list):
-            images.extend(result["images"])
-
-        return list(dict.fromkeys(images))
 
     def generate_answer(self, query: str, search_results: List[Dict[str, Any]]) -> str:
         """
@@ -370,9 +336,7 @@ class DocumentSearchEngine:
             page_number = doc.get("page_number", "")
             text = doc.get("text", "")
             similarity = doc.get("searchScore", 0.0)
-
-            analysis = doc.get("content_analysis", {})
-            key_info = analysis.get("key_information", "")
+            summary = doc.get("summary", "")
 
             context += f"\n문서 {idx + 1}: {folder_name}"
             if page_number:
@@ -380,8 +344,8 @@ class DocumentSearchEngine:
 
             context += f"\n유사도: {similarity:.4f}"
 
-            if key_info:
-                context += f"\n핵심 정보: {key_info}"
+            if summary:
+                context += f"\n요약: {summary}"
 
             if text:
                 if len(text) > 1000:
@@ -393,7 +357,19 @@ class DocumentSearchEngine:
 
             images = doc.get("images", [])
             if images:
-                context += f"\n이미지 포함: {len(images)}개\n"
+                context += f"\n이미지 정보:"
+
+                for img_idx, img in enumerate(images[:3]):  # 최대 3개 이미지만 설명
+                    if isinstance(img, dict):
+                        description = img.get("description", f"이미지 {img_idx + 1}")
+                        context += f"\n- {description}"
+                    else:
+                        context += f"\n- 이미지 {img_idx + 1}"
+
+                if len(images) > 3:
+                    context += f"\n- 외 {len(images) - 3}개 이미지"
+
+                context += "\n"
 
         return context
 
@@ -436,7 +412,8 @@ class DocumentSearchEngine:
         try:
             if '_id' not in document:
                 import hashlib
-                doc_string = json.dumps(document, sort_keys=True)
+                doc_string = json.dumps({k: v for k, v in document.items() if k != self.embedding_field},
+                                        sort_keys=True)
                 document['_id'] = hashlib.md5(doc_string.encode()).hexdigest()
 
             if self.embedding_field not in document or not document[self.embedding_field]:
@@ -478,41 +455,68 @@ class DocumentSearchEngine:
             exclude_folders = ['복리후생_및_기타지원제도']
 
         try:
-            all_pages = list(self.collection.find({"is_consolidated": {"$ne": True}}))
+            all_pages = list(self.collection.find({
+                "$or": [
+                    {"is_consolidated": {"$exists": False}},
+                    {"is_consolidated": False}
+                ],
+                "content_type": {"$ne": "consolidated_document"}
+            }))
+
             logger.info(f"총 {len(all_pages)}개의 페이지 데이터를 불러왔습니다.")
 
-            folder_groups = self._group_pages_by_folder(all_pages, exclude_folders)
+            folder_groups = {}
+
+            for page in all_pages:
+                folder_name = page.get('folder_name', '')
+
+                if folder_name in exclude_folders:
+                    continue
+
+                if folder_name not in folder_groups:
+                    folder_groups[folder_name] = []
+
+                page_info = {
+                    'page_number': page.get('page_number', ''),
+                    'text_content': page.get('text_content', page.get('description', '')),
+                    'page_summary': page.get('page_summary', ''),
+                    'images': page.get('images', []),
+                    'elements': page.get('elements', [])
+                }
+
+                folder_groups[folder_name].append(page_info)
+
             logger.info(f"총 {len(folder_groups)}개의 문서 그룹이 생성되었습니다.")
 
-            batch_size = 10
-            batches = [list(folder_groups.items())[i:i + batch_size]
-                       for i in range(0, len(folder_groups), batch_size)]
-
             processed_count = 0
-            for batch_idx, batch in enumerate(batches):
-                logger.info(f"배치 {batch_idx + 1}/{len(batches)} 처리 중...")
 
-                for folder_name, pages in batch:
-                    try:
-                        pages.sort(key=lambda p: self._safe_int(p.get('page_number', 0)))
+            for folder_name, pages in folder_groups.items():
+                try:
+                    pages.sort(key=lambda p: self._safe_int(p.get('page_number', 0)))
 
-                        consolidated_doc = self._create_consolidated_document(folder_name, pages)
+                    consolidated_doc = self._create_consolidated_document(folder_name, pages)
 
-                        self.collection.replace_one(
-                            {'_id': consolidated_doc['_id']},
-                            consolidated_doc,
-                            upsert=True
-                        )
+                    self.collection.replace_one(
+                        {'_id': consolidated_doc['_id']},
+                        consolidated_doc,
+                        upsert=True
+                    )
 
-                        processed_count += 1
-                    except Exception as e:
-                        logger.error(f"문서 '{folder_name}' 처리 중 오류 발생: {e}")
+                    processed_count += 1
+
+                    if processed_count % 10 == 0:
+                        logger.info(f"{processed_count}/{len(folder_groups)} 문서 처리 완료")
+
+                except Exception as e:
+                    logger.error(f"문서 '{folder_name}' 처리 중 오류 발생: {e}")
 
             for folder_name in exclude_folders:
                 self.collection.update_many(
                     {"folder_name": folder_name},
                     {"$set": {"is_exception_doc": True}}
                 )
+
+            logger.info(f"마이그레이션 완료: {processed_count}/{len(folder_groups)} 문서 처리")
 
             return {
                 "total_folders": len(folder_groups),
@@ -524,43 +528,7 @@ class DocumentSearchEngine:
             logger.error(f"마이그레이션 중 오류 발생: {e}")
             return {"error": str(e)}
 
-    def _group_pages_by_folder(self, pages: List[Dict[str, Any]],
-                               exclude_folders: List[str]) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        페이지를 폴더별로 그룹화
-
-        Args:
-            pages: 페이지 목록
-            exclude_folders: 제외할 폴더 목록
-
-        Returns:
-            폴더별 페이지 그룹
-        """
-        folder_groups = {}
-
-        for page in pages:
-            folder_name = page.get('folder_name', '')
-
-            if folder_name in exclude_folders:
-                continue
-
-            if folder_name not in folder_groups:
-                folder_groups[folder_name] = []
-
-            page_info = {
-                'page_number': page.get('page_number', ''),
-                'description': page.get('description', '')
-            }
-
-            if 'images' in page and page['images']:
-                page_info['images'] = page['images']
-
-            folder_groups[folder_name].append(page_info)
-
-        return folder_groups
-
-    def _create_consolidated_document(self, folder_name: str,
-                                      pages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _create_consolidated_document(self, folder_name: str, pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         통합 문서 생성
 
@@ -571,53 +539,105 @@ class DocumentSearchEngine:
         Returns:
             통합 문서
         """
-        full_text = f"문서: {folder_name}\n"
+        full_text = f"문서: {folder_name}\n\n"
+        all_summaries = []
         all_images = []
+        all_elements = []
 
         for page in pages:
             page_num = page.get('page_number', '')
-            desc = page.get('description', '')
-            full_text += f"페이지 {page_num}: {desc}\n"
+            text = page.get('text_content', '')
+            summary = page.get('page_summary', '')
 
-            if 'images' in page and page['images']:
-                all_images.extend(self._extract_image_data(page['images']))
+            full_text += f"페이지 {page_num}:\n{text}\n\n"
+
+            if summary:
+                all_summaries.append(f"페이지 {page_num}: {summary}")
+
+            for img in page.get('images', []):
+                if isinstance(img, dict):
+                    all_images.append(img)
+                else:
+                    all_images.append({"image": img, "description": f"페이지 {page_num} 이미지"})
+
+            for element in page.get('elements', []):
+                element_copy = element.copy()
+                element_copy['id'] = f"p{page_num}_{element_copy.get('id', 0)}"
+                element_copy['page_number'] = page_num
+                all_elements.append(element_copy)
+
+        document_summary = self._generate_document_summary(folder_name, all_summaries)
 
         document = {
             '_id': f"doc_{folder_name}",
             'folder_name': folder_name,
-            'pages': pages,
+            'document_name': folder_name,
             'full_text': full_text,
-            'all_images': all_images,
+            'document_summary': document_summary,
+            'page_summaries': all_summaries,
+            'pages': pages,
+            'all_images': all_images[:20],  # 이미지 수 제한
+            'all_elements': all_elements,
             'is_consolidated': True,
+            'content_type': 'consolidated_document',
             'created_at': datetime.now()
         }
 
-        document[self.embedding_field] = self.generate_embedding(full_text)
+        embedding_text = f"""
+        문서: {folder_name}
+        요약: {document_summary}
+
+        페이지 요약:
+        {' '.join(all_summaries[:5])}
+
+        내용 샘플:
+        {full_text[:5000]}
+        """
+
+        document[self.embedding_field] = self.generate_embedding(embedding_text)
 
         return document
 
-    def _extract_image_data(self, images: List[Any]) -> List[str]:
+    def _generate_document_summary(self, document_name: str, page_summaries: List[str]) -> str:
         """
-        이미지 데이터 추출
+        문서 전체 요약 생성
 
         Args:
-            images: 이미지 데이터 목록
+            document_name: 문서명
+            page_summaries: 페이지 요약 목록
 
         Returns:
-            추출된 이미지 URL 목록
+            문서 전체 요약
         """
-        result = []
+        if not self.openai_client or not page_summaries:
+            return f"{document_name} 문서"
 
-        if not images:
-            return result
+        try:
+            summaries_text = "\n".join(page_summaries[:10])  # 최대 10개 페이지 요약만 사용
 
-        for img in images:
-            if isinstance(img, dict) and 'image' in img:
-                result.append(img['image'])
-            elif isinstance(img, str):
-                result.append(img)
+            messages = [
+                {
+                    "role": "system",
+                    "content": "여러 페이지 요약을 바탕으로 문서 전체의 간결한 요약을 생성하세요."
+                },
+                {
+                    "role": "user",
+                    "content": f"문서명: {document_name}\n\n페이지 요약:\n{summaries_text}\n\n이 문서의 전체 내용을 100단어 이내로 요약해주세요."
+                }
+            ]
 
-        return result
+            response = self.openai_client.chat.completions.create(
+                model=self.chat_model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=200
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            logger.warning(f"문서 요약 생성 오류: {e}")
+            return f"{document_name} 문서 ({len(page_summaries)}페이지)"
 
     def _safe_int(self, value: Any) -> int:
         """
