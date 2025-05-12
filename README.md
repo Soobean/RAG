@@ -57,7 +57,7 @@
 
 1. 저장소 복제
    ```bash
-   git clone https://github.com/yourusername/document-search-system.git
+   git clone https://github.com/soobean/RAG.git
    cd document-search-system
    ```
 
