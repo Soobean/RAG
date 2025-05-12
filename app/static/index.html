@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 문서 검색 시스템</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>통합 문서 검색 시스템</h1>
+
+        <div class="search-form">
+            <div class="form-group">
+                <label for="query">질문:</label>
+                <input type="text" id="query" placeholder="질문을 입력하세요" autofocus>
+            </div>
+
+            <div class="form-group">
+                <label for="max-documents">조회할 문서 수:</label>
+                <input type="number" id="max-documents" min="1" max="10" value="3">
+            </div>
+
+            <button id="search-btn">답변 생성</button>
+        </div>
+
+        <!-- 로딩 표시 -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>답변을 생성하는 중입니다...</p>
+        </div>
+
+        <!-- 오류 메시지 -->
+        <div class="error" id="error-message"></div>
+
+        <!-- 답변 섹션 -->
+        <div class="answer-section" id="answer-section">
+            <h2>통합 답변</h2>
+
+            <!-- 답변 내용 -->
+            <div class="answer-container">
+                <div class="answer-header">
+                    <h3>질문에 대한 답변</h3>
+                </div>
+                <div class="answer-content" id="main-answer"></div>
+            </div>
+
+            <!-- 참조 문서 목록 -->
+            <div class="source-documents">
+                <h3>참조 문서</h3>
+                <div id="source-documents"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 이미지 모달 -->
+    <div id="imageModal" class="modal">
+        <span class="close">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <script src="/static/js/search.js"></script>
+    <script src="/static/js/ui.js"></script>
+</body>
+</html>

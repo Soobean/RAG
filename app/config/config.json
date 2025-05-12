@@ -1,0 +1,18 @@
+{
+    "openai": {
+        "api_version": "2025-04-01-preview",
+        "multimodal_model": "gpt-4o",
+        "text_model": "gpt-4.1"
+    },
+    "document_intelligence": {
+        "layout_model": "prebuilt-layout"
+    },
+    "processing": {
+        "max_image_width": 1000,
+        "max_image_size_kb": 1024,
+        "default_compression_quality": 85
+    },
+    "search": {
+        "default_top_k": 3
+    }
+}
