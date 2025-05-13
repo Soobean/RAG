@@ -38,6 +38,15 @@ def load_config():
             }
         }
 
+    # MongoDB 연결 설정
+    if os.getenv('COSMOS_CONNECTION_STRING'):
+        connection_string = os.getenv('COSMOS_CONNECTION_STRING')
+        logger.info("Azure Cosmos DB 연결 사용 중")
+    else:
+        # 기본 로컬 MongoDB 연결 문자열 (개발 환경용)
+        connection_string = "mongodb://localhost:27017/"
+        logger.info("로컬 MongoDB 연결 사용 중 - 개발 환경으로 실행")
+
     config = {
         'openai': {
             'endpoint': os.getenv('AZURE_OPENAI_ENDPOINT'),
@@ -48,8 +57,7 @@ def load_config():
             'embedding_model': config_data.get('openai', {}).get('embedding_model', 'text-embedding-3-small')
         },
         'cosmos': {
-            'connection_string': os.getenv('COSMOS_CONNECTION_STRING',
-                                           "mongodb+srv://cosmosadmin:skeppass!A@cosmos-skep-aoai.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"),
+            'connection_string': connection_string,
             'database': os.getenv('COSMOS_DATABASE', 'SKEP_AIPLATFORM_LOCAL'),
             'collection': os.getenv('COSMOS_COLLECTION', 'welfare')
         },
@@ -59,8 +67,5 @@ def load_config():
 
     if not config['openai']['endpoint'] or not config['openai']['api_key']:
         logger.warning("OpenAI 엔드포인트 또는 API 키가 설정되지 않았습니다.")
-
-    if not config['cosmos']['connection_string']:
-        logger.warning("Cosmos DB 연결 문자열이 설정되지 않았습니다.")
 
     return config

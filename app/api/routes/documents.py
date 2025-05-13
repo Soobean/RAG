@@ -3,34 +3,12 @@ import tempfile
 import logging
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, Query
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from ..models.schemas import DocumentUploadResponse, DocumentListResponse, DocumentInfo
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# 모델 정의
-class DocumentUploadResponse(BaseModel):
-    success: bool = Field(..., description="성공 여부")
-    message: str = Field(..., description="처리 메시지")
-    document_name: str = Field(..., description="문서명")
-    pages_processed: int = Field(0, description="처리된 페이지 수")
-
-
-class DocumentInfo(BaseModel):
-    folder_name: str = Field(..., description="문서 폴더명")
-    document_type: str = Field(..., description="문서 유형")
-    pages_count: int = Field(0, description="페이지 수")
-    created_at: Optional[str] = Field(None, description="생성 시간")
-    document_summary: Optional[str] = Field(None, description="문서 요약")
-
-
-class DocumentListResponse(BaseModel):
-    documents: List[DocumentInfo] = Field(..., description="문서 목록")
-    total_count: int = Field(..., description="총 문서 수")
-
 
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(request: Request, file: UploadFile = File(...)):

@@ -1,90 +1,84 @@
-import os
-import re
 import io
 import base64
 from PIL import Image
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def process_image(img, max_width=1000, quality=85):
+    """
+    이미지 처리 및 Base64 인코딩
+
+    Args:
+        img: PIL 이미지 객체
+        max_width: 최대 이미지 너비
+        quality: JPEG 압축 품질
+
+    Returns:
+        Base64 인코딩된 이미지 문자열
+    """
+    try:
+        # 이미지 크기 조정
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((max_width, new_height), Image.LANCZOS)
+
+        # JPEG 형식으로 인코딩
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        buffer.seek(0)
+
+        # Base64 인코딩
+        encoded_image = base64.b64encode(buffer.read()).decode('utf-8')
+        return f"data:image/jpeg;base64,{encoded_image}"
+    except Exception as e:
+        logger.error(f"이미지 처리 오류: {e}")
+        return ""
 
 
 def safe_int(value, default=0):
     """
-    안전하게 정수로 변환
-    :param value: 변환할 값
-    :param default: 변환 실패 시 기본값
-    :return: 정수 값
+    문자열을 안전하게 정수로 변환
+
+    Args:
+        value: 변환할 값
+        default: 변환 실패 시 반환할 기본값
+
+    Returns:
+        변환된 정수 또는 기본값
     """
-    if value is None:
+    if not value:
         return default
 
     if isinstance(value, int):
         return value
 
     try:
-        if isinstance(value, str):
-            clean_value = ''.join(c for c in value if c.isdigit())
-            if clean_value:
-                return int(clean_value)
-        return default
+        # 문자열에서 숫자만 추출
+        clean_value = ''.join(c for c in str(value) if c.isdigit())
+        return int(clean_value) if clean_value else default
     except:
         return default
 
 
-def sanitize_filename(filename):
+def truncate_text(text, max_length=100, suffix="..."):
     """
-    파일명 정리
-    :param filename: 원본 파일명
-    :return: 정리된 파일명
+    텍스트를 지정된 길이로 자르기
+
+    Args:
+        text: 원본 텍스트
+        max_length: 최대 길이
+        suffix: 잘린 경우 접미사
+
+    Returns:
+        잘린 텍스트
     """
-    sanitized = re.sub(r'[\\/*?:"<>|]', "", filename)
-    sanitized = re.sub(r'\s+', "_", sanitized)
-    return sanitized
+    if not text:
+        return ""
 
+    if len(text) <= max_length:
+        return text
 
-def process_image(image, max_width=1000, quality=85, max_size_kb=1024):
-    """
-    이미지 처리 및 최적화
-    :param image: PIL Image 객체
-    :param max_width: 최대 너비
-    :param quality: JPEG 품질
-    :param max_size_kb: 최대 파일 크기(KB)
-    :return: Base64로 인코딩된 이미지
-    """
-    if image.width > max_width:
-        ratio = max_width / image.width
-        new_height = int(image.height * ratio)
-        image = image.resize((max_width, new_height), Image.LANCZOS)
-
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=quality, optimize=True)
-
-    if buffer.tell() > max_size_kb * 1024:
-        for lower_quality in [70, 50, 30]:
-            buffer.seek(0)
-            buffer.truncate(0)
-            image.save(buffer, format="JPEG", quality=lower_quality, optimize=True)
-            if buffer.tell() <= max_size_kb * 1024:
-                break
-
-    buffer.seek(0)
-    base64_encoded = base64.b64encode(buffer.read()).decode('utf-8')
-    return f"data:image/jpeg;base64,{base64_encoded}"
-
-
-def extract_text_from_region(text, region_type):
-    """
-    텍스트에서 특정 유형의 정보 추출
-    :param text: 원문 텍스트
-    :param region_type: 추출할 정보 유형 (title, table, paragraph 등)
-    :return: 추출된 텍스트
-    """
-    if region_type == "title":
-        lines = text.split("\n")
-        return lines[0] if lines else ""
-
-    elif region_type == "table":
-        table_rows = []
-        for line in text.split("\n"):
-            if "|" in line or "\t" in line:
-                table_rows.append(line)
-        return "\n".join(table_rows)
-
-    return text
+    return text[:max_length] + suffix

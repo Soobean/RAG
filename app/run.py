@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import uvicorn
 from config.env_loader import load_config
 from core.search_engine import DocumentSearchEngine
@@ -23,6 +24,7 @@ def main():
     parser.add_argument('--host', type=str, default='0.0.0.0', help='API 서버 호스트')
     parser.add_argument('--port', type=int, default=8000, help='API 서버 포트')
     parser.add_argument('--reload', action='store_true', help='자동 재시작 활성화')
+    parser.add_argument('--workers', type=int, default=1, help='워커 프로세스 수')
 
     parser.add_argument('--file', type=str, help='처리할 문서 파일 경로 (process 모드)')
 
@@ -34,9 +36,31 @@ def main():
     document_processor = DocumentProcessor(config, search_engine)
 
     if args.mode == 'api':
-        logger.info(f"API 서버 시작: http://{args.host}:{args.port}")
+        logger.info(f"API 서버 시작: http://{args.host}:{args.port} (워커 수: {args.workers})")
+
         app = create_app(config, search_engine, document_processor)
-        uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+
+        if args.reload:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(current_dir)
+
+            module_path = os.path.relpath(os.path.abspath(__file__), parent_dir).replace(os.sep, '.')
+            module_name = module_path.replace('.py', '') + ':app'
+
+            uvicorn.run(
+                module_name,
+                host=args.host,
+                port=args.port,
+                reload=args.reload,
+                workers=args.workers
+            )
+        else:
+            uvicorn.run(
+                app,
+                host=args.host,
+                port=args.port,
+                workers=args.workers
+            )
 
     elif args.mode == 'process':
         if not args.file:
@@ -56,5 +80,11 @@ def main():
             logger.error(f"문서 처리 중 오류 발생: {e}")
 
 
+app = None
 if __name__ == "__main__":
     main()
+else:
+    config = load_config()
+    search_engine = DocumentSearchEngine(config)
+    document_processor = DocumentProcessor(config, search_engine)
+    app = create_app(config, search_engine, document_processor)
