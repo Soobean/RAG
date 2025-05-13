@@ -19,18 +19,15 @@ def process_image(img, max_width=1000, quality=85):
         Base64 인코딩된 이미지 문자열
     """
     try:
-        # 이미지 크기 조정
         if img.width > max_width:
             ratio = max_width / img.width
             new_height = int(img.height * ratio)
             img = img.resize((max_width, new_height), Image.LANCZOS)
 
-        # JPEG 형식으로 인코딩
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
         buffer.seek(0)
 
-        # Base64 인코딩
         encoded_image = base64.b64encode(buffer.read()).decode('utf-8')
         return f"data:image/jpeg;base64,{encoded_image}"
     except Exception as e:
@@ -56,7 +53,6 @@ def safe_int(value, default=0):
         return value
 
     try:
-        # 문자열에서 숫자만 추출
         clean_value = ''.join(c for c in str(value) if c.isdigit())
         return int(clean_value) if clean_value else default
     except:

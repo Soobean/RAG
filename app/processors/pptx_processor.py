@@ -29,7 +29,6 @@ class PPTXProcessor:
         PPTX 처리 메인 함수
         """
         try:
-            # python-pptx 임포트
             from pptx import Presentation
 
             prs = Presentation(pptx_path)
@@ -43,13 +42,10 @@ class PPTXProcessor:
                 logger.info(f"슬라이드 {slide_num}/{total_slides} 처리 중...")
 
                 try:
-                    # 슬라이드 텍스트 추출
                     slide_text = self._extract_slide_text(slide)
 
-                    # 슬라이드 이미지 추출
                     slide_image = self._extract_slide_as_image(slide, pptx_path, slide_idx)
 
-                    # 결과 데이터 구성
                     slide_data = {
                         "folder_name": folder_name,
                         "page_number": str(slide_num),
@@ -76,7 +72,6 @@ class PPTXProcessor:
 
                 except Exception as e:
                     logger.error(f"슬라이드 {slide_num} 처리 중 오류: {e}")
-                    # 기본 슬라이드 데이터 추가
                     pages_data.append({
                         "folder_name": folder_name,
                         "page_number": str(slide_num),
@@ -120,16 +115,13 @@ class PPTXProcessor:
         슬라이드를 이미지로 변환
         """
         try:
-            # 방법 1: LibreOffice 사용
             return self._extract_via_libreoffice(pptx_path, slide_idx)
         except Exception as e:
             logger.warning(f"LibreOffice 변환 실패: {e}")
             try:
-                # 방법 2: 텍스트 기반 이미지 생성
                 return self._create_text_image(slide, slide_idx)
             except Exception as e:
                 logger.warning(f"텍스트 이미지 생성 실패: {e}")
-                # 방법 3: 기본 이미지 생성
                 return self._create_default_image(slide_idx)
 
     def _extract_via_libreoffice(self, pptx_path, slide_idx):
@@ -139,7 +131,6 @@ class PPTXProcessor:
         temp_dir = tempfile.mkdtemp()
         output_pdf = os.path.join(temp_dir, "slides.pdf")
 
-        # LibreOffice로 PPTX를 PDF로 변환
         subprocess.call([
             'soffice',
             '--headless',
@@ -149,7 +140,6 @@ class PPTXProcessor:
         ])
 
         try:
-            # PDF를 이미지로 변환
             import fitz  # PyMuPDF
             doc = fitz.open(output_pdf)
 
@@ -159,7 +149,6 @@ class PPTXProcessor:
                 img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 doc.close()
 
-                # 임시 폴더 정리
                 import shutil
                 shutil.rmtree(temp_dir)
 
@@ -167,7 +156,6 @@ class PPTXProcessor:
 
             raise Exception("슬라이드를 찾을 수 없습니다")
         except Exception as e:
-            # 임시 폴더 정리
             import shutil
             shutil.rmtree(temp_dir)
             raise e
@@ -180,19 +168,15 @@ class PPTXProcessor:
         img = Image.new('RGB', (width, height), color='white')
         draw = ImageDraw.Draw(img)
 
-        # 기본 폰트 사용
         font = ImageFont.load_default()
 
-        # 제목
         draw.text((20, 20), f"슬라이드 {slide_idx + 1}", fill='black', font=font)
 
-        # 텍스트 내용
         text = ""
         for shape in slide.shapes:
             if hasattr(shape, "text"):
                 text += shape.text + "\n"
 
-        # 텍스트 그리기
         y_position = 60
         for line in text.split('\n'):
             draw.text((20, y_position), line, fill='black', font=font)
@@ -210,10 +194,8 @@ class PPTXProcessor:
         img = Image.new('RGB', (width, height), color='white')
         draw = ImageDraw.Draw(img)
 
-        # 기본 폰트 사용
         font = ImageFont.load_default()
 
-        # 중앙에 텍스트 그리기
         draw.text((width // 2 - 100, height // 2 - 20), f"슬라이드 {slide_idx + 1}", fill='black', font=font)
         draw.text((width // 2 - 150, height // 2 + 20), "이미지를 생성할 수 없습니다", fill='black', font=font)
 
@@ -243,8 +225,7 @@ class PPTXProcessor:
         """
         pages_data = []
 
-        # PPTX 파일의 슬라이드 수를 추정 (일반적으로 PPTX에는 최소 1개 이상의 슬라이드가 있음)
-        for slide_idx in range(5):  # 최대 5개 슬라이드까지만 가정
+        for slide_idx in range(5):
             slide_data = {
                 "folder_name": folder_name,
                 "page_number": str(slide_idx + 1),

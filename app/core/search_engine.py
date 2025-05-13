@@ -30,9 +30,12 @@ class DocumentSearchEngine:
         self.embedding_model = config['openai'].get('embedding_model', 'text-embedding-3-small')
         self.chat_model = config['openai'].get('chat_model', 'gpt-4.1')
 
-        self.database = self.cosmos_client[self.database_id] if self.cosmos_client is not None else None
-        self.collection = self.database[self.collection_name] if self.database is not None else None
-
+        self.database = None
+        self.collection = None
+        if self.cosmos_client is not None:
+            self.database = self.cosmos_client[self.database_id]
+            if self.database is not None:
+                self.collection = self.database[self.collection_name]
 
         logger.info(f"검색 엔진 초기화 완료: Database={self.database_id}, Collection={self.collection_name}")
 
@@ -151,7 +154,6 @@ class DocumentSearchEngine:
         Returns:
             검색 결과 목록
         """
-        # 변경: if not self.collection: 대신 is not None 사용
         if self.collection is None:
             logger.error("Cosmos DB 컬렉션이 초기화되지 않았습니다.")
             return []
@@ -321,6 +323,7 @@ class DocumentSearchEngine:
         except Exception as e:
             logger.error(f"답변 생성 중 오류 발생: {e}")
             return f"답변을 생성하는 중 오류가 발생했습니다: {str(e)}"
+
     def _build_answer_context(self, search_results: List[Dict[str, Any]]) -> str:
         """
         답변 생성용 컨텍스트 구성
@@ -361,7 +364,7 @@ class DocumentSearchEngine:
             if images:
                 context += f"\n이미지 정보:"
 
-                for img_idx, img in enumerate(images[:3]):  # 최대 3개 이미지만 설명
+                for img_idx, img in enumerate(images[:3]):
                     if isinstance(img, dict):
                         description = img.get("description", f"이미지 {img_idx + 1}")
                         context += f"\n- {description}"
@@ -386,7 +389,6 @@ class DocumentSearchEngine:
         Returns:
             검색 결과 목록
         """
-        # 변경: if not self.collection: 대신 is not None 사용
         if self.collection is None:
             logger.error("Cosmos DB 컬렉션이 초기화되지 않았습니다.")
             return []
@@ -408,7 +410,6 @@ class DocumentSearchEngine:
         Returns:
             업데이트된 문서
         """
-        # 변경: if not self.collection: 대신 is not None 사용
         if self.collection is None:
             logger.error("Cosmos DB 컬렉션이 초기화되지 않았습니다.")
             raise Exception("데이터베이스 연결이 설정되지 않았습니다.")
@@ -440,6 +441,7 @@ class DocumentSearchEngine:
         except Exception as e:
             logger.error(f"문서 업서트 중 오류 발생: {e}")
             raise
+
     def migrate_to_document_structure_in_place(self, exclude_folders: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         페이지 단위 문서를 문서 단위로 마이그레이션
@@ -530,6 +532,7 @@ class DocumentSearchEngine:
         except Exception as e:
             logger.error(f"마이그레이션 중 오류 발생: {e}")
             return {"error": str(e)}
+
     def _create_consolidated_document(self, folder_name: str, pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         통합 문서 생성
@@ -578,7 +581,7 @@ class DocumentSearchEngine:
             'document_summary': document_summary,
             'page_summaries': all_summaries,
             'pages': pages,
-            'all_images': all_images[:20],  # 이미지 수 제한
+            'all_images': all_images[:20],
             'all_elements': all_elements,
             'is_consolidated': True,
             'content_type': 'consolidated_document',
@@ -615,7 +618,7 @@ class DocumentSearchEngine:
             return f"{document_name} 문서"
 
         try:
-            summaries_text = "\n".join(page_summaries[:10])  # 최대 10개 페이지 요약만 사용
+            summaries_text = "\n".join(page_summaries[:10])  #
 
             messages = [
                 {
@@ -640,6 +643,7 @@ class DocumentSearchEngine:
         except Exception as e:
             logger.warning(f"문서 요약 생성 오류: {e}")
             return f"{document_name} 문서 ({len(page_summaries)}페이지)"
+
     def _safe_int(self, value: Any) -> int:
         """
         안전하게 정수로 변환

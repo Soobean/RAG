@@ -15,5 +15,9 @@
     },
     "search": {
         "default_top_k": 3
+    },
+    "performance": {
+        "cache_enabled": false,
+        "cache_ttl_seconds": 3600
     }
 }

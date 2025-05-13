@@ -43,7 +43,6 @@ def load_config():
         connection_string = os.getenv('COSMOS_CONNECTION_STRING')
         logger.info("Azure Cosmos DB 연결 사용 중")
     else:
-        # 기본 로컬 MongoDB 연결 문자열 (개발 환경용)
         connection_string = "mongodb://localhost:27017/"
         logger.info("로컬 MongoDB 연결 사용 중 - 개발 환경으로 실행")
 

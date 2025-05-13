@@ -1,6 +1,12 @@
 import argparse
 import logging
 import os
+import sys
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 import uvicorn
 from config.env_loader import load_config
 from core.search_engine import DocumentSearchEngine
@@ -41,18 +47,12 @@ def main():
         app = create_app(config, search_engine, document_processor)
 
         if args.reload:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(current_dir)
-
-            module_path = os.path.relpath(os.path.abspath(__file__), parent_dir).replace(os.sep, '.')
-            module_name = module_path.replace('.py', '') + ':app'
-
             uvicorn.run(
-                module_name,
+                "run:app",
                 host=args.host,
                 port=args.port,
-                reload=args.reload,
-                workers=args.workers
+                reload=True,
+                workers=1
             )
         else:
             uvicorn.run(
@@ -81,6 +81,7 @@ def main():
 
 
 app = None
+
 if __name__ == "__main__":
     main()
 else:

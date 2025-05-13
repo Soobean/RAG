@@ -19,14 +19,12 @@ class DocumentProcessor:
         self.search_engine = search_engine
         self.openai_client = search_engine.openai_client
 
-        # 설정 로드
         self.processing_config = config.get('processing', {})
         self.max_image_width = self.processing_config.get('max_image_width', 1000)
         self.image_quality = self.processing_config.get('default_compression_quality', 85)
         self.max_image_size_kb = self.processing_config.get('max_image_size_kb', 1024)
         self.multimodal_model = config.get('openai', {}).get('multimodal_model', 'gpt-4o')
 
-        # 프로세서 초기화 - 필요한 시점에 동적으로 임포트
         self.pdf_processor = None
         self.pptx_processor = None
         self.current_document_name = ""
@@ -54,10 +52,9 @@ class DocumentProcessor:
             else:
                 raise ValueError(f"지원되지 않는 파일 형식: {file_extension}")
 
-            # hasattr 대신 직접 속성 검사 및 None 체크
             if hasattr(self.search_engine, 'migrate_to_document_structure_in_place'):
                 migrate_func = getattr(self.search_engine, 'migrate_to_document_structure_in_place')
-                if migrate_func is not None and callable(migrate_func):
+                if callable(migrate_func):
                     try:
                         self.search_engine.migrate_to_document_structure_in_place()
                     except Exception as e:
@@ -73,7 +70,7 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"문서 처리 중 오류 발생: {e}", exc_info=True)
             return {
-                "document_name": self.current_document_name if hasattr(self, 'current_document_name') else "unknown",
+                "document_name": getattr(self, 'current_document_name', "unknown"),
                 "pages_processed": 0,
                 "status": "error",
                 "error": str(e)
@@ -82,22 +79,18 @@ class DocumentProcessor:
     def _process_pdf(self, pdf_path: str) -> List[Dict[str, Any]]:
         """PDF 파일 처리 - 필요할 때 동적으로 클래스 로드"""
         try:
-            # 필요한 시점에 PDF 프로세서 동적 임포트
             if self.pdf_processor is None:
                 try:
                     from processors.pdf_processor import PDFProcessor
                     self.pdf_processor = PDFProcessor(self.config, self.openai_client)
                 except ImportError:
                     logger.warning("PyMuPDF 임포트 실패, 내장 기본 처리기 사용")
-                    # 기본 PDF 처리 로직 구현
                     self.pdf_processor = self._create_fallback_pdf_processor()
 
-            # 페이지 처리 및 저장
             pages_data = self.pdf_processor.process(pdf_path, self.current_document_name)
             processed_pages = []
 
             for page_data in pages_data:
-                # 임베딩 생성 및 문서 저장
                 page_data['combined_embedding'] = self._create_optimized_embedding(page_data)
                 document = self._prepare_for_storage(page_data)
                 self.search_engine.upsert_document(document)
@@ -116,7 +109,6 @@ class DocumentProcessor:
     def _process_pptx(self, pptx_path: str) -> List[Dict[str, Any]]:
         """PPTX 파일 처리 - 필요할 때 동적으로 클래스 로드"""
         try:
-            # 필요한 시점에 PPTX 프로세서 동적 임포트
             if self.pptx_processor is None:
                 try:
                     from processors.pptx_processor import PPTXProcessor
@@ -126,12 +118,10 @@ class DocumentProcessor:
                     # 기본 PPTX 처리 로직 구현
                     self.pptx_processor = self._create_fallback_pptx_processor()
 
-            # 슬라이드 처리 및 저장
             pages_data = self.pptx_processor.process(pptx_path, self.current_document_name)
             processed_pages = []
 
             for page_data in pages_data:
-                # GPT-4o로 분석 및 임베딩 생성
                 if 'images' in page_data and page_data['images']:
                     analysis_result = self._analyze_with_gpt4o(page_data['images'][0])
                     page_data['page_summary'] = analysis_result.get('page_summary', '')
@@ -155,14 +145,12 @@ class DocumentProcessor:
     def _create_fallback_pdf_processor(self):
         """PyMuPDF 없을 때 기본 PDF 처리기 생성"""
 
-        # 간단한 클래스 구현
         class BasicPDFProcessor:
             def __init__(self, config, openai_client):
                 self.config = config
                 self.openai_client = openai_client
 
             def process(self, pdf_path, folder_name):
-                # 간단한 PDF 텍스트 추출 (PyPDF2 등 사용 가능)
                 try:
                     import PyPDF2
                     pages_data = []
@@ -189,13 +177,11 @@ class DocumentProcessor:
     def _create_fallback_pptx_processor(self):
         """python-pptx 없을 때 기본 PPTX 처리기 생성"""
 
-        # 간단한 클래스 구현
         class BasicPPTXProcessor:
             def __init__(self, config):
                 self.config = config
 
             def process(self, pptx_path, folder_name):
-                # 간단한 메타데이터 정보만 제공
                 return [{
                     'folder_name': folder_name,
                     'page_number': '1',
@@ -273,7 +259,6 @@ class DocumentProcessor:
                 }
             ]
 
-            # response_format 파라미터 수정 (최신 API 버전에 맞게)
             response = self.openai_client.chat.completions.create(
                 model=self.multimodal_model,
                 messages=messages,
@@ -288,6 +273,7 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"GPT-4o 분석 오류: {e}", exc_info=True)
             return {"elements": [], "page_summary": f"분석 실패: {str(e)}"}
+
     def _create_optimized_embedding(self, processed_content):
         """최적화된 임베딩 텍스트 생성"""
         embedding_text = f"""

@@ -29,12 +29,11 @@ def create_app(config, search_engine, document_processor):
         title="통합 문서 검색 API",
         description="GPT-4o 기반 문서 처리 및 검색 API",
         version="2.0.0",
-        docs_url=None,  # 커스텀 Swagger UI를 위해 비활성화
-        redoc_url=None,  # 커스텀 ReDoc을 위해 비활성화
+        docs_url=None,  
+        redoc_url=None,
         openapi_url="/api/openapi.json",
     )
 
-    # 미들웨어 설정
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -43,14 +42,11 @@ def create_app(config, search_engine, document_processor):
         allow_headers=["*"],
     )
 
-    # 캐시 설정
     cache = {}
 
-    # 응답 압축 미들웨어 (FastAPI 0.110.0에서 지원)
     from fastapi.middleware.gzip import GZipMiddleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-    # 성능 측정 미들웨어
     @app.middleware("http")
     async def add_process_time_header(request: Request, call_next: Callable):
         start_time = time.time()
@@ -59,23 +55,17 @@ def create_app(config, search_engine, document_processor):
         response.headers["X-Process-Time"] = str(process_time)
         return response
 
-    # 캐싱 미들웨어
     @app.middleware("http")
     async def cache_middleware(request: Request, call_next: Callable):
         if config.get('performance', {}).get('cache_enabled', False) and request.method == "GET":
-            # 캐시 키 생성
             cache_key = f"{request.url.path}?{request.url.query}"
 
-            # 캐시 유효 시간 (초)
             ttl = config.get('performance', {}).get('cache_ttl_seconds', 3600)
 
-            # 캐시에서 응답 검색
             cached_response = cache.get(cache_key)
             if cached_response:
                 timestamp, content, headers = cached_response
-                # 캐시가 여전히 유효한지 확인
                 if time.time() - timestamp < ttl:
-                    # 헤더 복사
                     response = Response(
                         content=content,
                         media_type=headers.get("content-type", "application/json")
@@ -86,10 +76,8 @@ def create_app(config, search_engine, document_processor):
                     response.headers["X-Cache"] = "HIT"
                     return response
 
-        # 캐시 미스 또는 캐싱 비활성화
         response = await call_next(request)
 
-        # GET 요청에 대한 응답 캐싱
         if config.get('performance', {}).get('cache_enabled',
                                              False) and request.method == "GET" and response.status_code == 200:
             cache_key = f"{request.url.path}?{request.url.query}"
@@ -100,32 +88,26 @@ def create_app(config, search_engine, document_processor):
 
         return response
 
-    # 상태 저장
     app.state.config = config
     app.state.search_engine = search_engine
     app.state.document_processor = document_processor
 
     # 라우터 설정
-    from routes import search, documents
+    from api.routes import search, documents
 
-    # API 버전 관리 (2025년 기준)
     prefix_v1 = "/api/v1"
     prefix_v2 = "/api/v2"
 
-    # v1 API (레거시 호환성 유지)
     app.include_router(search.router, prefix=prefix_v1, tags=["search_v1"])
     app.include_router(documents.router, prefix=prefix_v1, tags=["documents_v1"])
 
-    # v2 API (기본)
     app.include_router(search.router, prefix="/api", tags=["search"])
     app.include_router(documents.router, prefix="/api", tags=["documents"])
 
-    # 정적 파일 설정
-    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
     if os.path.exists(static_dir):
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-    # 에러 핸들러
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         return JSONResponse(
@@ -141,7 +123,6 @@ def create_app(config, search_engine, document_processor):
             content={"error": "서버 내부 오류가 발생했습니다.", "code": 500}
         )
 
-    # 의존성 추가 미들웨어
     @app.middleware("http")
     async def add_dependencies(request: Request, call_next):
         request.state.config = config
@@ -150,7 +131,6 @@ def create_app(config, search_engine, document_processor):
         response = await call_next(request)
         return response
 
-    # 커스텀 Swagger UI
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():
         return get_swagger_ui_html(
@@ -160,7 +140,6 @@ def create_app(config, search_engine, document_processor):
             swagger_css_url="/static/swagger-ui.css",
         )
 
-    # 기본 엔드포인트
     @app.get("/")
     async def root():
         return {
@@ -170,7 +149,6 @@ def create_app(config, search_engine, document_processor):
             "health": "/health"
         }
 
-    # 상태 확인 엔드포인트
     @app.get("/health")
     async def health_check():
         status_data = {
@@ -184,19 +162,15 @@ def create_app(config, search_engine, document_processor):
             }
         }
 
-        # 상세 상태 확인
         if search_engine and search_engine.collection:
             try:
-                # MongoDB 서버 상태 확인
                 status_data["database_status"] = "connected"
-                # 문서 수 확인
                 status_data["document_count"] = search_engine.collection.count_documents({})
             except Exception as e:
                 status_data["database_status"] = f"error: {str(e)}"
 
         return status_data
 
-    # API 정보 엔드포인트
     @app.get("/api/info")
     async def api_info():
         return {
@@ -216,15 +190,18 @@ def create_app(config, search_engine, document_processor):
             ]
         }
 
-    # 로깅 구성 업데이트
     @app.on_event("startup")
     async def startup_event():
         """
         애플리케이션 시작 시 이벤트 핸들러
         """
-        search_engine = app.core.search_engine
+        logger.info(f"애플리케이션 시작됨: API 버전 2.0.0")
 
-        if search_engine is not None and search_engine.collection is not None:
-            logger.info(f"데이터베이스 연결됨: {search_engine.database_id}.{search_engine.collection_name}")
-        else:
-            logger.warning("데이터베이스 연결되지 않음. 일부 기능이 제한될 수 있습니다.")
+        if hasattr(app.state, "search_engine"):
+            search_engine = app.state.search_engine
+            if search_engine is not None and search_engine.collection is not None:
+                logger.info(f"데이터베이스 연결됨: {search_engine.database_id}.{search_engine.collection_name}")
+            else:
+                logger.warning("데이터베이스 연결되지 않음. 일부 기능이 제한될 수 있습니다.")
+
+    return app

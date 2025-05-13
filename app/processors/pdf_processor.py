@@ -46,15 +46,12 @@ class PDFProcessor:
             try:
                 page = doc[page_idx]
 
-                # 페이지 이미지 생성
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                 img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 page_image = self._process_and_encode_image(img)
 
-                # GPT-4o로 페이지 분석
                 analysis_result = self._analyze_with_gpt4o(page_image)
 
-                # 페이지 콘텐츠 처리
                 page_data = self._process_page_content(page, analysis_result, folder_name, page_num)
 
                 pages_data.append(page_data)
@@ -62,7 +59,6 @@ class PDFProcessor:
 
             except Exception as e:
                 logger.error(f"페이지 {page_num} 처리 중 오류: {e}")
-                # 기본 페이지 데이터 추가
                 pages_data.append({
                     'folder_name': folder_name,
                     'page_number': str(page_num),
@@ -207,7 +203,6 @@ class PDFProcessor:
 
             if element_type == 'image':
                 try:
-                    # 이미지 요소 추출
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect)
                     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                     image_data = self._process_and_encode_image(img)
@@ -226,7 +221,6 @@ class PDFProcessor:
 
             elif element_type == 'text':
                 try:
-                    # 텍스트 요소 추출
                     text_content = page.get_text("text", clip=rect)
 
                     if text_content.strip():
@@ -238,7 +232,6 @@ class PDFProcessor:
 
             processed_content['elements'].append(element_data)
 
-        # 이미지가 없으면 전체 페이지 이미지 사용
         if not processed_content['images']:
             try:
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
@@ -253,7 +246,6 @@ class PDFProcessor:
             except Exception as e:
                 logger.warning(f"전체 페이지 이미지 추출 오류: {e}")
 
-        # 텍스트 내용 확인
         if not processed_content['text_content'].strip():
             processed_content['text_content'] = "텍스트 내용 없음"
 
