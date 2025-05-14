@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def process_image(img, max_width=1000, quality=85):
+def process_image(img, max_width=1000, quality=85,max_size_kb=1024):
     """
     이미지 처리 및 Base64 인코딩
 
@@ -19,19 +19,34 @@ def process_image(img, max_width=1000, quality=85):
         Base64 인코딩된 이미지 문자열
     """
     try:
+        if not img:
+            logger.error("유효하지 않는 이미지 객체")
+            return ""
+
         if img.width > max_width:
             ratio = max_width / img.width
             new_height = int(img.height * ratio)
             img = img.resize((max_width, new_height), Image.LANCZOS)
 
         buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        current_quality = quality
+        while current_quality >= 10:
+            buffer.seek(0)
+            buffer.truncate(0)
+            img.save(buffer, format="JPEG", quality=current_quality, optimize=True)
+            size_kb = buffer.tell() / 1024
+
+            if size_kb <= max_size_kb:
+                break
+
+            current_quality -= 10
+
         buffer.seek(0)
 
         encoded_image = base64.b64encode(buffer.read()).decode('utf-8')
         return f"data:image/jpeg;base64,{encoded_image}"
     except Exception as e:
-        logger.error(f"이미지 처리 오류: {e}")
+        logger.error(f"이미지 처리 오류: {e}", exc_info=True)
         return ""
 
 

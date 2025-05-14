@@ -548,6 +548,8 @@ class DocumentSearchEngine:
         all_summaries = []
         all_images = []
         all_elements = []
+        all_image_descriptions = []
+
 
         for page in pages:
             page_num = page.get('page_number', '')
@@ -562,6 +564,8 @@ class DocumentSearchEngine:
             for img in page.get('images', []):
                 if isinstance(img, dict):
                     all_images.append(img)
+                    if 'description' in img and img['description']:
+                        all_image_descriptions.append(f"페이지 {page_num} 이미지:{img['description']}")
                 else:
                     all_images.append({"image": img, "description": f"페이지 {page_num} 이미지"})
 
@@ -580,6 +584,7 @@ class DocumentSearchEngine:
             'full_text': full_text,
             'document_summary': document_summary,
             'page_summaries': all_summaries,
+            'image_descriptions': all_image_descriptions,
             'pages': pages,
             'all_images': all_images[:20],
             'all_elements': all_elements,

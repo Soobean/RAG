@@ -59,6 +59,9 @@ async function uploadDocument(event) {
     const formData = new FormData();
     formData.append('file', file);
 
+    // 콘솔에 파일명 출력하여 확인 (디버깅용)
+    console.log("업로드할 파일명:", file.name);
+
     try {
         // 업로드 시작
         showUploadProgress(true);

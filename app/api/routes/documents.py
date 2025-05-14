@@ -29,7 +29,8 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
     try:
         document_processor = request.state.document_processor
-        result = document_processor.process_document(temp_file_path)
+        folder_name = os.path.splitext(file.filename)[0]
+        result = document_processor.process_document(temp_file_path, folder_name)
 
         if result['status'] == 'error':
             raise HTTPException(

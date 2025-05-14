@@ -102,9 +102,14 @@ def create_app(config, search_engine, document_processor):
     app.include_router(search.router, prefix="/api", tags=["search"])
     app.include_router(documents.router, prefix="/api", tags=["documents"])
 
-    static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
-    if os.path.exists(static_dir):
-        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    if not os.path.exists(static_dir):
+        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        if not os.path.exists(static_dir):
+            os.makedirs(static_dir)
+            logger.warning(f"정적 파일 디렉토리가 없어 생성했습니다: {static_dir}")
+
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
@@ -140,15 +145,18 @@ def create_app(config, search_engine, document_processor):
 
     @app.get("/", include_in_schema=False)
     async def read_index():
-        return FileResponse(os.path.join(static_dir, "index.html"))
-    async def root():
-        return {
-            "message": "통합 문서 검색 API에 오신 것을 환영합니다!",
-            "version": "2.0.0",
-            "documentation": "/docs",
-            "health": "/health"
-        }
+        index_path = os.path.join(static_dir, "index.html")
 
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        else:
+            logger.error(f"index.html 파일을 찾을 수 없습니다: {index_path}")
+            return {
+                "message": "통합 문서 검색 API에 오신 것을 환영합니다!",
+                "version": "2.0.0",
+                "documentation": "/docs",
+                "health": "/health"
+            }
     @app.get("/health")
     async def health_check():
         status_data = {

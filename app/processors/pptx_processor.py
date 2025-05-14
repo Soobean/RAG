@@ -6,6 +6,7 @@ import io
 import base64
 from typing import Dict, Any, List
 from PIL import Image, ImageDraw, ImageFont
+from ..core.utils import process_image
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -204,17 +205,12 @@ class PPTXProcessor:
     def _process_and_encode_image(self, img):
         """이미지 처리 및 Base64 인코딩"""
         try:
-            if img.width > self.max_image_width:
-                ratio = self.max_image_width / img.width
-                new_height = int(img.height * ratio)
-                img = img.resize((self.max_image_width, new_height), Image.LANCZOS)
-
-            buffer = io.BytesIO()
-            img.save(buffer, format="JPEG", quality=self.image_quality, optimize=True)
-            buffer.seek(0)
-
-            encoded_image = base64.b64encode(buffer.read()).decode('utf-8')
-            return f"data:image/jpeg;base64,{encoded_image}"
+            return process_image(
+                img,
+                max_width=self.max_image_width,
+                quality=self.image_quality,
+                max_size_kb=self.config.get('processing', {}).get('max_image_size_kb', 1024)
+            )
         except Exception as e:
             logger.error(f"이미지 처리 오류: {e}")
             return ""

@@ -29,7 +29,7 @@ class DocumentProcessor:
         self.pptx_processor = None
         self.current_document_name = ""
 
-    def process_document(self, file_path: str) -> Dict[str, Any]:
+    def process_document(self,file_path: str, folder_name: str = None) -> Dict[str, Any]:
         """
         GPT-4o 기반 문서 처리 메인 함수
 
@@ -40,7 +40,10 @@ class DocumentProcessor:
             처리 결과 정보
         """
         try:
-            self.current_document_name = os.path.basename(file_path).split('.')[0]
+            if folder_name is None or not folder_name.strip():
+                self.current_document_name = os.path.basename(file_path).split('.')[0]
+            else:
+                self.current_document_name = folder_name
             file_extension = os.path.splitext(file_path)[1].lower()
 
             logger.info(f"문서 처리 시작: {self.current_document_name}{file_extension}")
@@ -87,10 +90,14 @@ class DocumentProcessor:
                     logger.warning("PyMuPDF 임포트 실패, 내장 기본 처리기 사용")
                     self.pdf_processor = self._create_fallback_pdf_processor()
 
-            pages_data = self.pdf_processor.process(pdf_path, self.current_document_name)
+            folder_name = self.current_document_name
+            pages_data = self.pdf_processor.process(pdf_path, folder_name)
             processed_pages = []
 
             for page_data in pages_data:
+                if page_data.get('folder_name') != folder_name:
+                    page_data['folder_name'] = folder_name
+
                 page_data['combined_embedding'] = self._create_optimized_embedding(page_data)
                 document = self._prepare_for_storage(page_data)
                 self.search_engine.upsert_document(document)
@@ -118,10 +125,14 @@ class DocumentProcessor:
                     # 기본 PPTX 처리 로직 구현
                     self.pptx_processor = self._create_fallback_pptx_processor()
 
-            pages_data = self.pptx_processor.process(pptx_path, self.current_document_name)
+            folder_name = self.current_document_name
+            pages_data = self.pptx_processor.process(pptx_path, folder_name)
             processed_pages = []
 
             for page_data in pages_data:
+                if page_data.get('folder_name') != folder_name:
+                    page_data['folder_name'] = folder_name
+
                 if 'images' in page_data and page_data['images']:
                     analysis_result = self._analyze_with_gpt4o(page_data['images'][0])
                     page_data['page_summary'] = analysis_result.get('page_summary', '')
@@ -207,9 +218,17 @@ class DocumentProcessor:
             logger.error("OpenAI 클라이언트가 초기화되지 않았습니다.")
             return {"elements": [], "page_summary": "분석 실패: OpenAI 클라이언트 없음"}
 
-        if not image_data or not image_data.startswith('data:image'):
-            logger.error("유효하지 않은 이미지 데이터")
+        if not image_data:
+            logger.error("이미지 데이터가 없습니다.")
             return {"elements": [], "page_summary": "분석 실패: 이미지 데이터 없음"}
+
+        if not isinstance(image_data, str):
+            logger.error("잘못된 이미지 데이터 형식")
+            return {"elements": [], "page_summary": "분석 실패: 잘못된 이미지 데이터 형식"}
+
+        if not image_data.startswith('data:image'):
+            logger.error("유효하지 않은 이미지 데이터 형식")
+            return {"elements": [], "page_summary": "분석 실패: 유효하지 않은 이미지 데이터"}
 
         try:
             messages = [
@@ -266,10 +285,16 @@ class DocumentProcessor:
                 temperature=0.2
             )
 
-            result = json.loads(response.choices[0].message.content)
-            logger.info(f"GPT-4o 분석 결과: {len(result.get('elements', []))}개 요소 감지")
-            return result
-
+            try:
+                result = json.loads(response.choices[0].message.content)
+                logger.info(f"GPT-4o 분석 결과: {len(result.get('elements', []))}개 요소 감지")
+                return result
+            except json.JSONDecodeError as e:
+                logger.error(f"GPT-4o 응답 JSON 파싱 오류: {e}")
+                return {
+                    "elements": [],
+                    "page_summary": f"페이지 분석: {response.choices[0].message.content[:100]}..."
+                }
         except Exception as e:
             logger.error(f"GPT-4o 분석 오류: {e}", exc_info=True)
             return {"elements": [], "page_summary": f"분석 실패: {str(e)}"}
@@ -297,10 +322,13 @@ class DocumentProcessor:
 
     def _prepare_for_storage(self, processed_content):
         """저장용 문서 형식 준비"""
+        folder_name = processed_content.get('folder_name', self.current_document_name)
+        page_number = processed_content.get('page_number', '')
+
         document = {
-            '_id': f"{processed_content['folder_name']}_page_{processed_content['page_number']}",
-            'folder_name': processed_content['folder_name'],
-            'page_number': processed_content['page_number'],
+            '_id': f"{folder_name}_page_{page_number}",
+            'folder_name': folder_name,
+            'page_number': page_number,
             'description': processed_content.get('text_content', ''),
             'page_summary': processed_content.get('page_summary', ''),
             'images': processed_content.get('images', []),
