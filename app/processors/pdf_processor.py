@@ -178,15 +178,12 @@ class PDFProcessor:
             'elements': []
         }
 
-        # 텍스트 추출
         processed_content['text_content'] = page.get_text("text")
 
-        # 요소 처리
         for idx, element in enumerate(analysis_result.get('elements', [])):
             element_type = element.get('type')
             coords = element.get('coordinates', {})
 
-            # 좌표 변환
             rect = fitz.Rect(
                 coords.get('x1', 0) * width / 100,
                 coords.get('y1', 0) * height / 100,

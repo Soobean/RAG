@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse ,FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -29,8 +29,6 @@ def create_app(config, search_engine, document_processor):
         title="통합 문서 검색 API",
         description="GPT-4o 기반 문서 처리 및 검색 API",
         version="2.0.0",
-        docs_url=None,  
-        redoc_url=None,
         openapi_url="/api/openapi.json",
     )
 
@@ -140,7 +138,9 @@ def create_app(config, search_engine, document_processor):
             swagger_css_url="/static/swagger-ui.css",
         )
 
-    @app.get("/")
+    @app.get("/", include_in_schema=False)
+    async def read_index():
+        return FileResponse(os.path.join(static_dir, "index.html"))
     async def root():
         return {
             "message": "통합 문서 검색 API에 오신 것을 환영합니다!",
